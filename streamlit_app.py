@@ -2,8 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import yfinance as yf
-import time
 from datetime import datetime, timedelta
+import time
 
 # --- Configuration ---
 symbols = {
@@ -11,130 +11,115 @@ symbols = {
     "AUD/USD": "AUDUSD=X",
     "USD/JPY": "USDJPY=X"
 }
-refresh_interval = 30  # seconds
+refresh_interval = 15  # seconds
+hourly_refresh_interval = 3600  # seconds
 
 # --- Functions ---
 
-@st.cache_data
-def load_initial_data(symbol):
+@st.cache_data(ttl=hourly_refresh_interval)
+def load_hourly_data(symbol):
     end = datetime.utcnow()
     start = end - timedelta(days=365)
     df = yf.download(symbol, start=start, end=end, interval="1h", progress=False)
     df.dropna(inplace=True)
     return df
 
-def fetch_latest_data(symbol):
+def fetch_latest_5m(symbol):
     df = yf.download(symbol, period="1d", interval="5m", progress=False)
     df.dropna(inplace=True)
     return df
 
-def calculate_metrics(symbol_name, df):
-    print(f"\n--- Debug: {symbol_name} ---")
-    print(f"Data length: {len(df)}")
-    print(f"Last index: {df.index[-1] if not df.empty else 'Empty'}")
-    if df.empty:
-        print("Empty dataframe!")
-        return {
-            "Instrument": symbol_name,
-            "Last Fetch": "Insufficient Data",
-            "Latest Close": np.nan,
-        }
-
-    # Extract scalar latest close price properly
-    latest_close = df['Close'].iloc[-1]
-    if isinstance(latest_close, pd.Series):
-        latest_close = float(latest_close.iloc[0])
-    else:
-        latest_close = float(latest_close)
-
-    last_time = df.index[-1]
-    last_time_str = last_time.strftime("%Y-%m-%d %H:%M")
-
-    last_6_closes = df['Close'].iloc[-6:]
-    print(f"Last 6 closes:\n{last_6_closes}")
-
-    close_pct_changes = last_6_closes.pct_change().dropna() * 100
-    print(f"Close pct changes (last 6):\n{close_pct_changes}")
-
-    def get_pct_change(periods_ago):
-        try:
-            past_value = df['Close'].iloc[-1 - periods_ago]
-            # Handle if past_value is Series:
-            if isinstance(past_value, pd.Series):
-                past_value = float(past_value.iloc[0])
-            else:
-                past_value = float(past_value)
-
-            change = ((latest_close - past_value) / past_value) * 100
-            print(f"Change vs -{periods_ago}: {change:.4f}% (latest_close={latest_close}, past_value={past_value})")
-            return change
-        except IndexError:
-            print(f"IndexError: Not enough data for -{periods_ago} periods ago")
-            return np.nan
-
-    changes = {}
-    for p in [6, 13, 624, 1324]:
-        changes[f'Δ vs -{p}'] = get_pct_change(p)
-
+def calculate_metrics(symbol_name, hourly_df, df_5m):
     metrics = {
         "Instrument": symbol_name,
-        "Last Fetch": last_time_str,
-        "Latest Close": latest_close,
+        "Latest Close": "N/A",
+        "First Hourly": "N/A",
+        "Last Hourly": "N/A",
+        "Last 5m Timestamp": "N/A",
+        "Next Update": (datetime.utcnow() + timedelta(seconds=refresh_interval)).strftime("%Y-%m-%d %H:%M:%S")
     }
 
-    for i, pct in enumerate(close_pct_changes[::-1]):
-        metrics[f"Δ-{i+1}"] = pct
+    if not hourly_df.empty:
+        hourly_df = hourly_df[~hourly_df.index.duplicated(keep="last")]
+        metrics["First Hourly"] = hourly_df.index[0].strftime("%Y-%m-%d %H:%M")
+        metrics["Last Hourly"] = hourly_df.index[-1].strftime("%Y-%m-%d %H:%M")
+        metrics["Latest Close"] = float(hourly_df['Close'].iloc[-1])
 
-    metrics.update(changes)
+        # Calculate last 5 percentage changes safely
+        close_changes = hourly_df["Close"].pct_change().dropna() * 100
+        last_n = 5
+        recent_changes = close_changes.iloc[-last_n:] if len(close_changes) >= last_n else close_changes
+
+        for i in range(last_n):
+            if i < len(recent_changes):
+                metrics[f"Δ-{i+1}"] = round(recent_changes.iloc[i], 2)
+            else:
+                metrics[f"Δ-{i+1}"] = "N/A"
+
+    if not df_5m.empty:
+        latest_5m_time = df_5m.index[-1]
+        metrics["Last 5m Timestamp"] = latest_5m_time.strftime("%Y-%m-%d %H:%M")
+
     return metrics
 
 # --- Streamlit UI ---
-st.title("📈 Forex Streaming App (Powered by yfinance)")
+st.set_page_config(layout="wide")
+st.title("📈 Forex Streaming App (Hourly + 5-min Updates)")
 
-# Data Store
-if 'data_store' not in st.session_state:
-    st.session_state.data_store = {}
-    for name, symbol in symbols.items():
-        st.session_state.data_store[name] = load_initial_data(symbol)
+# --- Session State Init ---
+if "hourly_data" not in st.session_state:
+    st.session_state.hourly_data = {
+        name: load_hourly_data(symbol) for name, symbol in symbols.items()
+    }
 
+# --- Live Display Placeholder ---
 placeholder = st.empty()
 
 def update_and_display():
-    metric_list = []
+    metrics_list = []
 
     for name, symbol in symbols.items():
-        df = st.session_state.data_store[name]
+        hourly_df = st.session_state.hourly_data[name]
 
-        # Fetch latest 5-minute data
-        latest_df = fetch_latest_data(symbol)
-        if not latest_df.empty and latest_df.index[-1] > df.index[-1]:
-            # Append latest row if it's new
-            new_row = latest_df.iloc[[-1]]
-            df = pd.concat([df, new_row])
-            df = df[~df.index.duplicated(keep='last')]
-            st.session_state.data_store[name] = df
+        # Fetch 5-minute data
+        df_5m = fetch_latest_5m(symbol)
 
-        # --- Calculate summary metrics ---
-        metrics = calculate_metrics(name, df)
-        metric_list.append(metrics)
+        # Replace last hourly candle with the last 5m close
+        if not df_5m.empty:
+            latest_5m_time = df_5m.index[-1]
+            latest_5m_close = df_5m["Close"].iloc[-1]
 
-    # Create DataFrame from collected metrics
-    result_df = pd.DataFrame(metric_list)
+            if not hourly_df.empty:
+                last_hour_time = hourly_df.index[-1]
+                # Replace only if the 5m time is within current hour
+                if latest_5m_time > last_hour_time:
+                    new_row = pd.DataFrame(
+                        {"Close": [latest_5m_close]},
+                        index=[latest_5m_time.replace(minute=0, second=0, microsecond=0)]
+                    )
+                    hourly_df = pd.concat([hourly_df, new_row])
+                    hourly_df = hourly_df[~hourly_df.index.duplicated(keep="last")]
+                    st.session_state.hourly_data[name] = hourly_df
+                else:
+                    # Replace the last row's close with latest 5m close
+                    hourly_df.iloc[-1, hourly_df.columns.get_loc("Close")] = latest_5m_close
+                    st.session_state.hourly_data[name] = hourly_df
 
-    # Identify percentage change columns
-    percentage_cols = [col for col in result_df.columns if "Δ" in col]
+        metrics = calculate_metrics(name, hourly_df, df_5m)
+        metrics_list.append(metrics)
 
-    # Safely convert and round only numeric columns
-    for col in percentage_cols:
-        result_df[col] = pd.to_numeric(result_df[col], errors="coerce").round(2)
+    df_display = pd.DataFrame(metrics_list)
 
-    # Optional: replace NaN with 'N/A'
-    result_df[percentage_cols] = result_df[percentage_cols].fillna("N/A")
+    # Format percentage columns
+    pct_cols = [col for col in df_display.columns if col.startswith("Δ-")]
+    for col in pct_cols:
+        df_display[col] = pd.to_numeric(df_display[col], errors="coerce").round(2).fillna("N/A")
 
-    # Display the DataFrame
-    placeholder.dataframe(result_df, use_container_width=True)
+    # Display
+    with placeholder.container():
+        st.dataframe(df_display, use_container_width=True)
 
-# --- Run the auto-updater loop ---
+# --- Main Loop ---
 while True:
     update_and_display()
     time.sleep(refresh_interval)
