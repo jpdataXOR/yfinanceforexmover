@@ -1,3 +1,5 @@
+.venv/
+venv/
 .streamlit/secrets.toml
 
 # Byte-compiled / optimized / DLL files
