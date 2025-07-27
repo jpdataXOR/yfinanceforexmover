@@ -118,25 +118,35 @@ def calculate_extended_metrics(symbol_name: str, hourly_df: pd.DataFrame, df_5m:
     # Latest hourly info
     last_hourly_time = hourly_df.index[-1]
     latest_hourly_close = hourly_df['Close'].iloc[-1]
-    extended["Latest Hourly Close"] = round(float(latest_hourly_close), 4)
+    try:
+        latest_hourly_close = float(latest_hourly_close)
+    except Exception:
+        latest_hourly_close = None
+    extended["Latest Hourly Close"] = round(latest_hourly_close, 4) if latest_hourly_close is not None else "N/A"
     extended["Last Hourly Timestamp"] = last_hourly_time.strftime("%Y-%m-%d %H:%M")
     
     # Latest Close: use 5-minute data if available, else hourly
     if not df_5m.empty:
-        latest_close = float(df_5m["Close"].iloc[-1])
-        extended["Latest Close"] = round(latest_close, 4)
+        try:
+            latest_close = float(df_5m["Close"].iloc[-1])
+            extended["Latest Close"] = round(latest_close, 4)
+        except Exception:
+            extended["Latest Close"] = round(float(latest_hourly_close), 4) if latest_hourly_close is not None else "N/A"
     else:
-        extended["Latest Close"] = round(float(latest_hourly_close), 4)
+        extended["Latest Close"] = round(float(latest_hourly_close), 4) if latest_hourly_close is not None else "N/A"
     
     # Helper to compute percentage difference using searchsorted to get closest past value
     def calc_pct_diff(offset_hours):
         target_time = last_hourly_time - timedelta(hours=offset_hours)
-        # Find the insertion index for the target time
         idx = hourly_df.index.searchsorted(target_time)
         if idx == 0:
             return "N/A"
         try:
-            past_close = float(hourly_df["Close"].iloc[idx - 1])
+            past_close = hourly_df["Close"].iloc[idx - 1]
+            # If past_close is a Series (with a name/ticker), extract the scalar value.
+            if hasattr(past_close, "item"):
+                past_close = past_close.item()
+            past_close = float(past_close)
         except Exception:
             return "N/A"
         if math.isnan(past_close) or past_close == 0:
