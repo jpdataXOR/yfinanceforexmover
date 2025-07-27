@@ -168,4 +168,34 @@ def calculate_extended_metrics(symbol_name: str, hourly_df: pd.DataFrame, df_5m:
     extended["Pct Diff 100h"] = calc_pct_diff(100)
     extended["Pct Diff 200h"] = calc_pct_diff(200)
     
+    # --- Custom columns ---
+    # av1h = (((Pct Diff 6h)*100*40) + ((Pct Diff 13h)*100*40)) / 2
+    # av22h = (((Pct Diff 100h)*100*20) + ((Pct Diff 200h)*100*20)) / 2
+    # day1h = av1h
+    # day2h = av22h
+    # overallavg = av1h + (av22h / 5)
+
+    def safe_float(val):
+        try:
+            return float(val)
+        except Exception:
+            return 0.0
+
+    pct6 = safe_float(extended["Pct Diff 6h"])
+    pct13 = safe_float(extended["Pct Diff 13h"])
+    pct100 = safe_float(extended["Pct Diff 100h"])
+    pct200 = safe_float(extended["Pct Diff 200h"])
+
+    av1h = (((pct6  * 40) + (pct13  * 40)) / 2)
+    av22h = (((pct100  * 20) + (pct200  * 20)) / 2)
+    day1h = av1h
+    day2h = av22h
+    overallavg = av1h + (av22h / 5)
+
+    extended["av1h"] = round(av1h, 2)
+    extended["av22h"] = round(av22h, 2)
+    extended["day1h"] = round(day1h, 2)
+    extended["day2h"] = round(day2h, 2)
+    extended["overallavg"] = round(overallavg, 2)
+
     return extended
