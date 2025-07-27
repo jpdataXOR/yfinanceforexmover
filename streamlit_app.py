@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timedelta
 
 from config import SYMBOLS, REFRESH_INTERVAL, HOURLY_REFRESH_INTERVAL
-from calculations import calculate_metrics, update_hourly_with_5m_data
+from calculations import calculate_metrics, update_hourly_with_5m_data, calculate_extended_metrics
 from data_fetcher import load_hourly_data, fetch_latest_5m
 
 # --- Streamlit UI ---
@@ -37,7 +37,8 @@ def should_refresh():
 
 # --- Main Display Function ---
 def update_and_display():
-    """Update data and display the dashboard"""
+    """Update data and display the dashboard along with extended metrics."""
+    extended_metrics_list = []
     metrics_list = []
 
     for name, symbol in SYMBOLS.items():
@@ -51,14 +52,24 @@ def update_and_display():
             hourly_df = update_hourly_with_5m_data(hourly_df, df_5m)
             st.session_state.hourly_data[name] = hourly_df
 
-        # Calculate metrics using shared code
+        # Extended metrics calculation
+        extended = calculate_extended_metrics(name, hourly_df, df_5m)
+        extended_metrics_list.append(extended)
+
+        # Existing metrics calculation
         metrics = calculate_metrics(name, hourly_df, df_5m)
         metrics_list.append(metrics)
 
-    # Create display dataframe
+    # Display Extended Metrics table
+    if extended_metrics_list:
+        df_extended = pd.DataFrame(extended_metrics_list)
+        st.markdown("### Extended Metrics")
+        st.dataframe(df_extended, use_container_width=True)
+
+    # Create display dataframe for regular metrics
     df_display = pd.DataFrame(metrics_list)
 
-    # Format the dataframe for better display
+    # Format the regular metrics dataframe for better display
     if not df_display.empty:
         # Convert percentage columns to proper format
         pct_cols = [col for col in df_display.columns if col.startswith("Δ-")]
@@ -67,7 +78,7 @@ def update_and_display():
                 if pd.notna(x) and str(x) != "N/A" and not isinstance(x, pd.Series)
                 else "N/A")
 
-        # Simple color styling function that works with scalars
+        # Simple color styling function for percentages
         def style_percentage(val):
             if val == "N/A" or pd.isna(val):
                 return ""
