@@ -1,6 +1,6 @@
 # --- Configuration ---
 SYMBOLS = {
-    "BTC-USD": "BTC-USD",
+    #"BTC-USD": "BTC-USD",
     "AUD/USD": "AUDUSD=X",
     "AUD/JPY": "AUDJPY=X",
     "AUD/NZD": "AUDNZD=X",
