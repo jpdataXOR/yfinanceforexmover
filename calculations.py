@@ -92,21 +92,23 @@ def update_hourly_with_5m_data(hourly_df: pd.DataFrame, df_5m: pd.DataFrame) -> 
 
 def calculate_extended_metrics(symbol_name: str, hourly_df: pd.DataFrame, df_5m: pd.DataFrame) -> dict:
     """
-    Calculate extended metrics based purely on hourly data for historical prices and 5-minute data for the latest price:
+    Calculate extended metrics using historical hourly data for past prices and 5-minute data for the latest price:
       - Latest Close (from 5m data if available, else hourly)
       - Latest Hourly Close (last value in hourly data)
-      - Last Hourly Timestamp
+      - Last Hourly Timestamp replaced by the latest 5m timestamp if available.
+      - Latest 5m Timestamp: The timestamp from the 5-minute data.
       - Δ-1: ((Latest close from 5m data – hourly close from 1 hour ago) / (hourly close from 1 hour ago)) × 100
-      - Pct Diff 6h, 13h, 100h, 200h similarly computed from hourly historical data.
+      - Pct Diff 6h, 13h, 100h, 200h similarly computed.
     """
     from datetime import timedelta
     import math
-    
+
     extended = {
        "Instrument": symbol_name,
        "Latest Close": "N/A",
        "Latest Hourly Close": "N/A",
        "Last Hourly Timestamp": "N/A",
+       "Latest 5m Timestamp": "N/A",
        "Δ-1": "N/A",
        "Pct Diff 6h": "N/A",
        "Pct Diff 13h": "N/A",
@@ -119,7 +121,7 @@ def calculate_extended_metrics(symbol_name: str, hourly_df: pd.DataFrame, df_5m:
     # Remove duplicates and sort by index
     hourly_df = hourly_df[~hourly_df.index.duplicated(keep='last')]
     hourly_df.sort_index(inplace=True)
-    
+
     last_hourly_time = hourly_df.index[-1]
     latest_hourly_close = hourly_df['Close'].iloc[-1]
     try:
@@ -127,19 +129,24 @@ def calculate_extended_metrics(symbol_name: str, hourly_df: pd.DataFrame, df_5m:
     except Exception:
         latest_hourly_close = None
     extended["Latest Hourly Close"] = round(latest_hourly_close, 4) if latest_hourly_close is not None else "N/A"
-    extended["Last Hourly Timestamp"] = last_hourly_time.strftime("%Y-%m-%d %H:%M")
-    
+
     # Determine the latest close value using 5m data if available; else, fallback to hourly
     latest_close_val = None
     if not df_5m.empty:
         try:
             latest_close_val = float(df_5m["Close"].iloc[-1])
             extended["Latest Close"] = round(latest_close_val, 4)
+            # Use the latest 5m timestamp for both "Last Hourly Timestamp" and new "Latest 5m Timestamp"
+            latest_5m_time = df_5m.index[-1]
+            formatted_time = latest_5m_time.strftime("%Y-%m-%d %H:%M")
+            extended["Last Hourly Timestamp"] = formatted_time
+            extended["Latest 5m Timestamp"] = formatted_time
         except Exception:
             pass
     if latest_close_val is None:
         latest_close_val = latest_hourly_close
         extended["Latest Close"] = round(latest_close_val, 4) if latest_close_val is not None else "N/A"
+        extended["Last Hourly Timestamp"] = last_hourly_time.strftime("%Y-%m-%d %H:%M")
     
     # Helper to calculate percentage difference using hourly data for the past price.
     def calc_pct_diff(offset_hours):
