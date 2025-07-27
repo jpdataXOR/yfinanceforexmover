@@ -133,6 +133,21 @@ with st.expander("ℹ️ App Information"):
     - 🔴 Red: Negative percentage change
     """)
 
+# --- Debug Window ---
+with st.expander("🐞 Debug Window - AUD/USD Data"):
+    if "AUD/USD" in st.session_state.hourly_data:
+        aud_data = st.session_state.hourly_data["AUD/USD"]
+        if not aud_data.empty:
+            st.write("**Total number of entries:**", len(aud_data))
+            st.write("**First entry (index & values):**", 
+                {"Timestamp": str(aud_data.index[0]), **aud_data.iloc[0].to_dict()})
+            st.write("**Last entry (index & values):**", 
+                {"Timestamp": str(aud_data.index[-1]), **aud_data.iloc[-1].to_dict()})
+        else:
+            st.info("AUD/USD data is empty")
+    else:
+        st.error("AUD/USD data not loaded")
+
 # Footer
 st.markdown("---")
 st.caption(f"Data provided by Yahoo Finance • Last updated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
