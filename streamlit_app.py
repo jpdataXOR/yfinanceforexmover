@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from config import SYMBOLS, REFRESH_INTERVAL, HOURLY_REFRESH_INTERVAL
 from calculations import calculate_metrics, update_hourly_with_5m_data, calculate_extended_metrics
@@ -161,4 +161,4 @@ with st.expander("🐞 Debug Window - AUD/USD Data"):
 
 # Footer
 st.markdown("---")
-st.caption(f"Data provided by Yahoo Finance • Last updated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
+st.caption(f"Data provided by Yahoo Finance • Last updated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC")

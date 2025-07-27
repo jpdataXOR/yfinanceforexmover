@@ -42,8 +42,10 @@ def calculate_metrics(symbol_name: str, hourly_df: pd.DataFrame, df_5m: pd.DataF
         # Assign changes in reverse order (most recent first)
         for i in range(last_n):
             if i < len(recent_changes):
-                # Use negative indexing to get most recent first and convert to scalar
                 change_value = recent_changes.iloc[-(i+1)]
+                # Ensure change_value is a scalar by checking for a Series and extracting the element
+                if isinstance(change_value, pd.Series):
+                    change_value = change_value.iloc[0]
                 metrics[f"Δ-{i+1}"] = round(float(change_value), 2)
             else:
                 metrics[f"Δ-{i+1}"] = "N/A"

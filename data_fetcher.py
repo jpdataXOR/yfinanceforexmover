@@ -1,3 +1,6 @@
+import warnings
+warnings.filterwarnings("ignore")
+
 import streamlit as st
 import pandas as pd
 import yfinance as yf
@@ -17,7 +20,7 @@ def load_hourly_data(symbol: str) -> pd.DataFrame:
     end = datetime.utcnow()
     start = end - timedelta(days=365)
     try:
-        df = yf.download(symbol, start=start, end=end, interval="1h", progress=False)
+        df = yf.download(symbol, start=start, end=end, interval="1h", progress=False, auto_adjust=True)
         df.dropna(inplace=True)
         return df
     except Exception as e:
@@ -34,7 +37,7 @@ def fetch_latest_5m(symbol: str) -> pd.DataFrame:
         pd.DataFrame: A dataframe with 5-minute data, or an empty dataframe on error.
     """
     try:
-        df = yf.download(symbol, period="1d", interval="5m", progress=False)
+        df = yf.download(symbol, period="1d", interval="5m", progress=False, auto_adjust=True)
         df.dropna(inplace=True)
         return df
     except Exception as e:
