@@ -191,11 +191,14 @@ def calculate_extended_metrics(symbol_name: str, hourly_df: pd.DataFrame, df_5m:
     day1h = av1h
     day2h = av22h
     overallavg = av1h + (av22h / 5)
+    overallavgabsolute = abs(overallavg)
 
+    # Place overallavg after Latest 5m Timestamp
+    extended["overallavg"] = round(overallavg, 2)
+    extended["overallavgabsolute"] = round(overallavgabsolute, 2)
     extended["av1h"] = round(av1h, 2)
     extended["av22h"] = round(av22h, 2)
     extended["day1h"] = round(day1h, 2)
     extended["day2h"] = round(day2h, 2)
-    extended["overallavg"] = round(overallavg, 2)
 
     return extended

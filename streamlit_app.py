@@ -63,8 +63,33 @@ def update_and_display():
     # Display Extended Metrics table
     if extended_metrics_list:
         df_extended = pd.DataFrame(extended_metrics_list)
+        # Reorder columns to move overallavg and overallavgabsolute after Latest 5m Timestamp
+        cols = list(df_extended.columns)
+        idx_5m = cols.index("Latest 5m Timestamp")
+        cols.remove("overallavg")
+        cols.remove("overallavgabsolute")
+        cols.insert(idx_5m + 1, "overallavg")
+        cols.insert(idx_5m + 2, "overallavgabsolute")
+        df_extended = df_extended[cols]
+        # Sort by overallavgabsolute descending
+        df_extended = df_extended.sort_values("overallavgabsolute", ascending=False)
+
+        # Color styling for overallavg
+        def style_overallavg(val):
+            if val == "N/A" or pd.isna(val):
+                return ""
+            try:
+                if float(val) > 0:
+                    return "background-color: #d4edda; color: #155724"
+                elif float(val) < 0:
+                    return "background-color: #f8d7da; color: #721c24"
+            except:
+                pass
+            return ""
+
+        styled_df_extended = df_extended.style.applymap(style_overallavg, subset=["overallavg"])
         st.markdown("### Extended Metrics")
-        st.dataframe(df_extended, use_container_width=True)
+        st.dataframe(styled_df_extended, use_container_width=True)
 
     # Create display dataframe for regular metrics
     df_display = pd.DataFrame(metrics_list)
