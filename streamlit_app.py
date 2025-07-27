@@ -12,28 +12,67 @@ from data_fetcher import load_hourly_data, fetch_latest_5m
 st.set_page_config(layout="wide", page_title="Forex Streaming Dashboard")
 st.title("📈 Forex Streaming App (Hourly + 5-min Updates)")
 
-# Add a status indicator
-status_col1, status_col2, status_col3 = st.columns([1, 1, 2])
-with status_col1:
-    st.metric("Refresh Interval", f"{REFRESH_INTERVAL}s")
-with status_col2:
-    st.metric("Last Update", datetime.utcnow().strftime("%H:%M:%S"))
+HOURLY_REFRESH_INTERVAL = 3600  # 1 hour in seconds
+FIVEM_REFRESH_INTERVAL = 300    # 5 minutes in seconds
 
 # --- Session State Init ---
+if "last_hourly_refresh" not in st.session_state:
+    st.session_state.last_hourly_refresh = datetime.now(timezone.utc)
+if "last_5m_refresh" not in st.session_state:
+    st.session_state.last_5m_refresh = datetime.now(timezone.utc)
 if "hourly_data" not in st.session_state:
     with st.spinner("Loading initial data..."):
         st.session_state.hourly_data = {}
         for name, symbol in SYMBOLS.items():
             st.session_state.hourly_data[name] = load_hourly_data(symbol)
 
-if "last_update" not in st.session_state:
-    st.session_state.last_update = datetime.utcnow()
+# --- Timer Calculation ---
+next_hourly_refresh = st.session_state.last_hourly_refresh + timedelta(seconds=HOURLY_REFRESH_INTERVAL)
+next_5m_refresh = st.session_state.last_5m_refresh + timedelta(seconds=FIVEM_REFRESH_INTERVAL)
 
-# --- Auto-refresh Logic ---
-def should_refresh():
-    """Check if it's time to refresh"""
-    now = datetime.utcnow()
-    return (now - st.session_state.last_update).total_seconds() >= REFRESH_INTERVAL
+# --- Countdown Calculation ---
+now_local = datetime.now().astimezone()
+seconds_to_next_5m = int((next_5m_refresh.astimezone() - now_local).total_seconds())
+if seconds_to_next_5m < 0:
+    seconds_to_next_5m = 0
+minutes, seconds = divmod(seconds_to_next_5m, 60)
+countdown_str = f"{minutes:02d}:{seconds:02d}"
+
+# --- UI Timers ---
+status_col1, status_col2, status_col3 = st.columns([1, 1, 2])
+with status_col1:
+    st.metric("Next Hourly Refresh", next_hourly_refresh.astimezone().strftime("%H:%M:%S"))
+with status_col2:
+    st.metric("Next 5m Refresh", next_5m_refresh.astimezone().strftime("%H:%M:%S"))
+    st.write(f"⏳ Countdown to next 5m refresh: **{countdown_str}**")
+with status_col3:
+    st.metric("Last Update", now_local.strftime("%Y-%m-%d %H:%M:%S"))
+
+# --- Refresh Logic ---
+now = datetime.now(timezone.utc)
+do_hourly_refresh = (now - st.session_state.last_hourly_refresh).total_seconds() >= HOURLY_REFRESH_INTERVAL
+do_5m_refresh = (now - st.session_state.last_5m_refresh).total_seconds() >= FIVEM_REFRESH_INTERVAL
+
+if do_hourly_refresh:
+    # Full refresh: reload hourly and 5m data
+    with st.spinner("Refreshing hourly and 5m data..."):
+        st.session_state.hourly_data = {}
+        for name, symbol in SYMBOLS.items():
+            st.session_state.hourly_data[name] = load_hourly_data(symbol)
+        st.session_state.last_hourly_refresh = now
+        st.session_state.last_5m_refresh = now  # Also update 5m timer
+    st.rerun()
+elif do_5m_refresh:
+    # Only refresh 5m data and recalculate metrics
+    with st.spinner("Refreshing 5m data..."):
+        for name, symbol in SYMBOLS.items():
+            hourly_df = st.session_state.hourly_data[name]
+            df_5m = fetch_latest_5m(symbol)
+            # Update hourly data with latest 5m close if needed
+            if not df_5m.empty:
+                st.session_state.hourly_data[name] = update_hourly_with_5m_data(hourly_df, df_5m)
+        st.session_state.last_5m_refresh = now
+    st.rerun()
 
 # --- Main Display Function ---
 def update_and_display():
@@ -134,8 +173,8 @@ def update_and_display():
 update_and_display()
 
 # --- Auto-refresh Setup ---
-if should_refresh():
-    st.rerun()
+#if should_refresh():
+#    st.rerun()
 
 # Add refresh button for manual updates
 if st.button("🔄 Manual Refresh", help="Click to refresh data immediately"):
@@ -186,4 +225,6 @@ with st.expander("🐞 Debug Window - AUD/USD Data"):
 
 # Footer
 st.markdown("---")
-st.caption(f"Data provided by Yahoo Finance • Last updated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC")
+st.caption(
+    f"Data provided by Yahoo Finance • Last updated: {datetime.now().astimezone().strftime('%Y-%m-%d %H:%M:%S')} (Local Time)"
+)
