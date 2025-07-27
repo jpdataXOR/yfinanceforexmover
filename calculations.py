@@ -92,19 +92,22 @@ def update_hourly_with_5m_data(hourly_df: pd.DataFrame, df_5m: pd.DataFrame) -> 
 
 def calculate_extended_metrics(symbol_name: str, hourly_df: pd.DataFrame, df_5m: pd.DataFrame) -> dict:
     """
-    Calculate extended metrics:
-      - Instrument
+    Calculate extended metrics based purely on hourly data for historical prices and 5-minute data for the latest price:
       - Latest Close (from 5m data if available, else hourly)
-      - Latest Hourly Close (last value in hourly_df)
+      - Latest Hourly Close (last value in hourly data)
       - Last Hourly Timestamp
-      - Percentage difference between latest hourly and 6, 13, 100, and 200 hours ago.
+      - Δ-1: ((Latest close from 5m data – hourly close from 1 hour ago) / (hourly close from 1 hour ago)) × 100
+      - Pct Diff 6h, 13h, 100h, 200h similarly computed from hourly historical data.
     """
     from datetime import timedelta
+    import math
+    
     extended = {
        "Instrument": symbol_name,
        "Latest Close": "N/A",
        "Latest Hourly Close": "N/A",
        "Last Hourly Timestamp": "N/A",
+       "Δ-1": "N/A",
        "Pct Diff 6h": "N/A",
        "Pct Diff 13h": "N/A",
        "Pct Diff 100h": "N/A",
@@ -113,11 +116,10 @@ def calculate_extended_metrics(symbol_name: str, hourly_df: pd.DataFrame, df_5m:
     if hourly_df.empty:
         return extended
 
-    # Remove duplicate timestamps and sort
+    # Remove duplicates and sort by index
     hourly_df = hourly_df[~hourly_df.index.duplicated(keep='last')]
     hourly_df.sort_index(inplace=True)
     
-    # Latest hourly info
     last_hourly_time = hourly_df.index[-1]
     latest_hourly_close = hourly_df['Close'].iloc[-1]
     try:
@@ -127,34 +129,33 @@ def calculate_extended_metrics(symbol_name: str, hourly_df: pd.DataFrame, df_5m:
     extended["Latest Hourly Close"] = round(latest_hourly_close, 4) if latest_hourly_close is not None else "N/A"
     extended["Last Hourly Timestamp"] = last_hourly_time.strftime("%Y-%m-%d %H:%M")
     
-    # Latest Close: use 5-minute data if available, else hourly
+    # Determine the latest close value using 5m data if available; else, fallback to hourly
+    latest_close_val = None
     if not df_5m.empty:
         try:
-            latest_close = float(df_5m["Close"].iloc[-1])
-            extended["Latest Close"] = round(latest_close, 4)
+            latest_close_val = float(df_5m["Close"].iloc[-1])
+            extended["Latest Close"] = round(latest_close_val, 4)
         except Exception:
-            extended["Latest Close"] = round(float(latest_hourly_close), 4) if latest_hourly_close is not None else "N/A"
-    else:
-        extended["Latest Close"] = round(float(latest_hourly_close), 4) if latest_hourly_close is not None else "N/A"
+            pass
+    if latest_close_val is None:
+        latest_close_val = latest_hourly_close
+        extended["Latest Close"] = round(latest_close_val, 4) if latest_close_val is not None else "N/A"
     
-    # Helper to compute percentage difference using searchsorted to get closest past value
+    # Helper to calculate percentage difference using hourly data for the past price.
     def calc_pct_diff(offset_hours):
         target_time = last_hourly_time - timedelta(hours=offset_hours)
         idx = hourly_df.index.searchsorted(target_time)
         if idx == 0:
             return "N/A"
         try:
-            past_close = hourly_df["Close"].iloc[idx - 1]
-            # If past_close is a Series (with a name/ticker), extract the scalar value.
-            if hasattr(past_close, "item"):
-                past_close = past_close.item()
-            past_close = float(past_close)
+            past_close = float(hourly_df["Close"].iloc[idx - 1])
         except Exception:
             return "N/A"
-        if math.isnan(past_close) or past_close == 0:
+        if past_close == 0 or math.isnan(past_close):
             return "N/A"
-        return round(((latest_hourly_close - past_close) / past_close) * 100, 2)
+        return round(((latest_close_val - past_close) / past_close) * 100, 2)
     
+    extended["Δ-1"] = calc_pct_diff(1)
     extended["Pct Diff 6h"] = calc_pct_diff(6)
     extended["Pct Diff 13h"] = calc_pct_diff(13)
     extended["Pct Diff 100h"] = calc_pct_diff(100)
